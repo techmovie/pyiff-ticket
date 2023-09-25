@@ -1,0 +1,7 @@
+logs
+__pycache__
+.DS_Store
+all_movies.yaml
+categories.yaml
+config.yaml
+seats.yaml
