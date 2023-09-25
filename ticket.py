@@ -8,6 +8,7 @@ from timer import Timer
 from datetime import datetime
 import os
 from collections import defaultdict
+import qrcode
 
 
 BASE_URL = "https://api.pyiffestival.com/app/api/v1"
@@ -136,6 +137,27 @@ class TicketHelper(object):
         )
         return self.handle_response("获取座位", res)
 
+    def create_pay_qr_code(self, order_ids):
+        for id in order_ids:
+            res = self.session.post(
+                url=BASE_URL + f"/ActivityFilmPlanOrder/{id}/InitiatePayPc",
+            )
+            result = self.handle_response("生成支付二维码", res)
+            if "codeUrl" in result:
+                qr = qrcode.QRCode(
+                    version=1,
+                    error_correction=qrcode.constants.ERROR_CORRECT_H,
+                    box_size=5,
+                    border=4,
+                )
+                qr.add_data(result["codeUrl"])
+                qr.make(fit=True)
+                img = qr.make_image(fill_color="black", back_color="white")
+                if not os.path.exists("pay"):
+                    os.makedirs("pay")
+                with open(f"pay/{id}.png", "wb") as f:
+                    img.save(f)
+
     def handle_response(self, func_name, res):
         if res.status_code == 200:
             result = res.json()
@@ -195,15 +217,27 @@ class TicketHelper(object):
             all_movies = self.find_all_the_films()
             with open("all_movies.yaml", "w") as f:
                 yaml.dump(all_movies, f, allow_unicode=True)
+        if "movies" not in self.config or not self.config["movies"]:
+            raise Exception("配置错误：请配置电影")
         movies = self.config["movies"]
         order_ids = []
         for movie in movies:
+            if "category" not in movie:
+                raise Exception("配置错误：请配置分类")
+            if "date" not in movie:
+                raise Exception("配置错误：请配置日期")
+            if "count" not in movie:
+                raise Exception("配置错误：请配置购票数量")
+            if movie["count"] > 5:
+                raise Exception("配置错误：购票数量不能超过5张")
             categoryList = all_movies[movie["category"]]
-            [found_movie] = [
-                item for item in categoryList if item["name"] == movie["name"]
-            ]
-            if not movie["date"]:
-                raise Exception("请配置日期")
+            [found_movie] = (
+                [item for item in categoryList if item["name"] == movie["name"]]
+                if any(item["name"] == movie["name"] for item in categoryList)
+                else [{}]
+            )
+            if not found_movie:
+                raise LookupError(f"未找到「{movie['name']}」")
             plans = []
             movie_detail = self.get_movie_detail(found_movie["id"])
             for plan in movie_detail["activityFilmPlans"]:
@@ -257,7 +291,7 @@ class TicketHelper(object):
         return order_ids
 
     def choose_seat(self, seats, movie_config):
-        num_seats_needed = movie_config["count"] or 1
+        num_seats_needed = movie_config["count"]
         seats_by_row = defaultdict(list)
         seats_number_by_row = defaultdict(list)
         for seat in seats:
@@ -314,6 +348,7 @@ class TicketHelper(object):
                 if len(order_ids) > 0:
                     logger.info(f"购票成功:{order_ids.join(',') }")
                     self.send_push("购票成功，请马上付款", order_ids.join(","))
+                    self.create_pay_qr_code(order_ids)
                     break
             except requests.exceptions.RequestException as e:
                 logger.error(e)
@@ -322,9 +357,10 @@ class TicketHelper(object):
                     break
             except LookupError as e:
                 logger.error(e)
-                self.send_push("查询失败", e)
                 if "指定时间" in str(e):
                     break
             except Exception as e:
                 logger.error("购票失败:" + str(e))
+                if "配置错误" in str(e):
+                    break
             self.wait_some_time()
