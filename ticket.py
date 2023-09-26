@@ -21,7 +21,7 @@ Headers = {
     "Referer": REFERER,
 }
 
-AVAIlABLE_SEAT_TYPE_ID = "17ca3a66-985d-4c30-80e9-372ab59abb95"
+AVAIlABLE_SEAT_TYPE_ID = "09ffe644-40cd-42fe-889c-46e0b940f8bc"
 
 
 class TicketHelper(object):
@@ -29,6 +29,7 @@ class TicketHelper(object):
         self.config = global_config
         self.activity_id = self.config["activity_id"]
         self.session = requests.Session()
+        self.session.headers.update(Headers)
         self.timer = Timer()
 
     def start(self):
@@ -115,13 +116,15 @@ class TicketHelper(object):
         )
         return self.handle_response("获取电影详情", res)
 
-    def create_order(self, seat_ids=[], cinema_id=""):
+    def create_order(self, seat_ids=[], plan_id=""):
         self.validate_user(self.activity_id)
+        self.session.headers.update({"Content-Type": "application/json"})
+        data = {
+            "activityFilmPlanSeats": seat_ids,
+        }
         res = self.session.post(
-            f"{BASE_URL}/ActivityFilmPlan/${cinema_id}/ActivityFilmPlanOrder",
-            json={
-                "activityFilmPlanSeats": seat_ids,
-            },
+            f"{BASE_URL}/ActivityFilmPlan/{plan_id}/ActivityFilmPlanOrder",
+            data=str(data),
         )
         return self.handle_response("创建订单", res)
 
@@ -138,9 +141,14 @@ class TicketHelper(object):
         return self.handle_response("获取座位", res)
 
     def create_pay_qr_code(self, order_ids):
+        self.session.headers.update({"Content-Type": "application/json"})
         for id in order_ids:
+            data = {
+                "couponCode": "",
+            }
             res = self.session.post(
                 url=BASE_URL + f"/ActivityFilmPlanOrder/{id}/InitiatePayPc",
+                data=str(data),
             )
             result = self.handle_response("生成支付二维码", res)
             if "codeUrl" in result:
@@ -159,7 +167,7 @@ class TicketHelper(object):
                     img.save(f)
 
     def handle_response(self, func_name, res):
-        if res.status_code == 200:
+        if res.status_code == 200 or res.status_code == 201:
             result = res.json()
             return result
         else:
@@ -275,15 +283,15 @@ class TicketHelper(object):
             if not plan["hasTickets"]:
                 raise Exception(f"「{movie['name']}」指定时间{movie['date']}的场次已售罄")
             plan_detail = self.get_film_plan_detail(plan["id"])
-            if plan_detail["canSell"]:
+            if not plan_detail["canSell"]:
                 raise Exception(f"「{movie['name']}」指定时间{movie['date']}的场次不可售")
             if not plan_detail["hasTickets"]:
                 raise Exception(f"「{movie['name']}」指定时间{movie['date']}的场次已售罄")
             seats = self.get_seats_for_film_plan(plan["id"])
             seat_ids = self.choose_seat(seats, movie)
             if not seat_ids:
-                raise Exception(f"「{movie['name']}」指定时间{movie['date']}的场次未找到可用座位")
-            result = self.create_order(seat_ids, plan["cinemaHallId"])
+                raise Exception(f"「{movie['name']}」'+指定时间{movie['date']}的场次未找到可用座位")
+            result = self.create_order(seat_ids, plan["id"])
             if "id" in result:
                 order_ids.append(result["id"])
             else:
@@ -299,7 +307,7 @@ class TicketHelper(object):
             area_condition = True
             if "area" in movie_config:
                 area_condition = seat["area"] == movie_config["area"]
-            if seat["seatTypeId"] == AVAIlABLE_SEAT_TYPE_ID and area_condition:
+            if seat["stateTypeId"] == AVAIlABLE_SEAT_TYPE_ID and area_condition:
                 seats_by_row[seat["row"]].append(
                     {"number": seat["number"], "id": seat["id"]}
                 )
@@ -346,8 +354,8 @@ class TicketHelper(object):
                 self.validate_user(self.activity_id)
                 order_ids = self.search_movie_and_place_order()
                 if len(order_ids) > 0:
-                    logger.info(f"购票成功:{order_ids.join(',') }")
-                    self.send_push("购票成功，请马上付款", order_ids.join(","))
+                    logger.info(f"购票成功:{(',').join(order_ids)}")
+                    self.send_push("购票成功，请马上付款", {(",").join(order_ids)})
                     self.create_pay_qr_code(order_ids)
                     break
             except requests.exceptions.RequestException as e:
