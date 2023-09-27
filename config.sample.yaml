@@ -1,0 +1,16 @@
+bark_key: 4rEt7tcMC6jHRZbZwBih3o
+run_time: '2023-09-19 20:59:00.100'
+token:
+movies:
+  - name: 金色茧房
+    category: 特别展映
+    date: '2023-09-30'
+    count: 2
+    area: 中后
+  - name: 金色茧房
+    category: 特别展映
+    date: '2023-10-07'
+    count: 2
+    area: 左下
+activity_id: c43d67c0-d54a-46e9-a3dd-727cd374dc3f #2023
+

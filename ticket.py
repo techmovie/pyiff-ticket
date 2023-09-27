@@ -9,6 +9,7 @@ from datetime import datetime
 import os
 from collections import defaultdict
 import qrcode
+from utils import get_random_user_agent, send_bark
 
 
 BASE_URL = "https://api.pyiffestival.com/app/api/v1"
@@ -17,11 +18,10 @@ REFERER = "https://www.pyiffestival.com"
 MAX_RETRY = 5
 
 Headers = {
-    "User-Agent": global_config["user_agent"],
+    "User-Agent": get_random_user_agent(),
     "Origin": ORIGIN,
     "Referer": REFERER,
 }
-
 AVAIlABLE_SEAT_TYPE_ID = "09ffe644-40cd-42fe-889c-46e0b940f8bc"
 
 
@@ -35,7 +35,7 @@ class TicketHelper(object):
 
     def start(self):
         if "token" not in self.config or not self.config["token"]:
-            self.send_push("请先登录", "请先登录并配置token")
+            send_bark("请先登录", "请先登录并配置token")
         else:
             self.session.headers.update(
                 {"Authorization": f'Bearer {self.config["token"]}'}
@@ -44,11 +44,6 @@ class TicketHelper(object):
 
     def wait_some_time(self):
         time.sleep(random.randint(3200, 7400) / 1000)
-
-    def send_push(self, title, content):
-        requests.get(
-            f'https://api.day.app/{self.config["bark_key"]}/{title}/{content}?isArchive=1'
-        )
 
     def validate_user(self, activity_id):
         res = self.session.get(
@@ -357,28 +352,28 @@ class TicketHelper(object):
                 order_ids = self.search_movie_and_place_order()
                 if len(order_ids) > 0:
                     logger.info(f"购票成功:{(',').join(order_ids)}")
-                    self.send_push("购票成功，请马上付款", {(",").join(order_ids)})
+                    send_bark("购票成功，请马上付款", {(",").join(order_ids)})
                     self.create_pay_qr_code(order_ids)
                     break
             except requests.exceptions.RequestException as e:
                 logger.error(e)
                 retries += 1
-                self.send_push("请求失败", e)
+                send_bark("请求失败", e)
                 if retries > MAX_RETRY:
                     logger.error("重试次数过多，退出")
-                    self.send_push("重试次数过多，退出", "")
+                    send_bark("重试次数过多，退出", "")
                     break
                 if "验证用户失败" in str(e):
-                    self.send_push("验证用户失败", "请检查token是否正确")
+                    send_bark("验证用户失败", "请检查token是否正确")
                     break
             except LookupError as e:
                 logger.error(e)
                 if "指定时间" in str(e):
-                    self.send_push("指定时间无场次", str(e))
+                    send_bark("指定时间无场次", str(e))
                     break
             except Exception as e:
                 logger.error("购票失败:" + str(e))
                 if "配置错误" in str(e):
-                    self.send_push("配置错误", str(e))
+                    send_bark("配置错误", str(e))
                     break
             self.wait_some_time()
