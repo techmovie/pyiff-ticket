@@ -11,17 +11,20 @@ from collections import defaultdict
 import qrcode
 from utils import get_random_user_agent, send_bark
 
+HOST_CONFIG = {
+    "dev": {
+        "base_api": "https://admin-api-dev.pyiffestival.com/app/api/v1",
+        "url": "https://www-dev.pyiffestival.com",
+    },
+    "prod": {
+        "base_api": "https://api.pyiffestival.com/app/api/v1",
+        "url": "https://www.pyiffestival.com",
+    },
+}
 
-BASE_URL = "https://api.pyiffestival.com/app/api/v1"
-ORIGIN = "https://www.pyiffestival.com"
-REFERER = "https://www.pyiffestival.com"
+
 MAX_RETRY = 5
 
-Headers = {
-    "User-Agent": get_random_user_agent(),
-    "Origin": ORIGIN,
-    "Referer": REFERER,
-}
 AVAIlABLE_SEAT_TYPE_ID = "09ffe644-40cd-42fe-889c-46e0b940f8bc"
 
 
@@ -30,6 +33,13 @@ class TicketHelper(object):
         self.config = global_config
         self.activity_id = self.config["activity_id"]
         self.session = requests.Session()
+        env = self.config["env"]
+        Headers = {
+            "User-Agent": get_random_user_agent(),
+            "Origin": HOST_CONFIG[env]["url"],
+            "Referer": HOST_CONFIG[env]["url"],
+        }
+        self.api_url = HOST_CONFIG[env]["base_api"]
         self.session.headers.update(Headers)
         self.timer = Timer()
 
@@ -47,7 +57,7 @@ class TicketHelper(object):
 
     def validate_user(self, activity_id):
         res = self.session.get(
-            url=BASE_URL + "/TenantUser",
+            url=self.api_url + "/TenantUser",
             params={"activityId": activity_id},
         )
         self.handle_response("验证用户", res)
@@ -56,7 +66,7 @@ class TicketHelper(object):
         if os.path.exists("categories.yaml"):
             return yaml.load(open("categories.yaml", "r"), Loader=yaml.FullLoader)
         res = self.session.get(
-            url=BASE_URL + f"/Activity/{self.activity_id}/ActivityFilmCategories",
+            url=self.api_url + f"/Activity/{self.activity_id}/ActivityFilmCategories",
         )
         result = self.handle_response("获取分类", res)
         if not result:
@@ -101,14 +111,14 @@ class TicketHelper(object):
             "SearchText": search_text,
         }
         res = self.session.get(
-            url=BASE_URL + f"/Activity/{self.activity_id}/ActivityFilms",
+            url=self.api_url + f"/Activity/{self.activity_id}/ActivityFilms",
             params=params,
         )
         return self.handle_response("获取电影列表", res)
 
     def get_movie_detail(self, movie_id):
         res = self.session.get(
-            url=BASE_URL + f"/ActivityFilm/{movie_id}",
+            url=self.api_url + f"/ActivityFilm/{movie_id}",
         )
         return self.handle_response("获取电影详情", res)
 
@@ -119,20 +129,21 @@ class TicketHelper(object):
             "activityFilmPlanSeats": seat_ids,
         }
         res = self.session.post(
-            f"{BASE_URL}/ActivityFilmPlan/{plan_id}/ActivityFilmPlanOrder",
+            f"{self.api_url}/ActivityFilmPlan/{plan_id}/ActivityFilmPlanOrder",
             data=str(data),
         )
         return self.handle_response("创建订单", res)
 
     def get_film_plan_detail(self, film_plan_id):
         res = self.session.get(
-            url=BASE_URL + f"/ActivityFilmPlan/{film_plan_id}",
+            url=self.api_url + f"/ActivityFilmPlan/{film_plan_id}",
         )
         return self.handle_response("获取场次详情", res)
 
     def get_seats_for_film_plan(self, film_plan_id):
         res = self.session.get(
-            url=BASE_URL + f"/ActivityFilmPlan/{film_plan_id}/ActivityFilmPlanSeats",
+            url=self.api_url
+            + f"/ActivityFilmPlan/{film_plan_id}/ActivityFilmPlanSeats",
         )
         return self.handle_response("获取座位", res)
 
@@ -143,7 +154,7 @@ class TicketHelper(object):
                 "couponCode": "",
             }
             res = self.session.post(
-                url=BASE_URL + f"/ActivityFilmPlanOrder/{id}/InitiatePayPc",
+                url=self.api_url + f"/ActivityFilmPlanOrder/{id}/InitiatePayPc",
                 data=str(data),
             )
             result = self.handle_response("生成支付二维码", res)
@@ -183,9 +194,11 @@ class TicketHelper(object):
             if category["nameEn"] == "FILM SCREENING"
         ]
         result = {}
+        movie_count = 0
         for category in film_screening_activities[0]["children"]:
             movies = []
             movie_list = self.get_movie_list(category["id"], pageSize=20)
+            movie_count += len(movie_list["items"])
             for movie in movie_list["items"]:
                 movie_detail = self.get_movie_detail(movie["id"])
                 plans = []
@@ -211,6 +224,8 @@ class TicketHelper(object):
                     }
                 )
             result[category["name"]] = movies
+        if movie_count == 0:
+            raise LookupError("排片表未出来，请稍后再试")
         return result
 
     def search_movie_and_place_order(self):
@@ -368,7 +383,7 @@ class TicketHelper(object):
                     break
             except LookupError as e:
                 logger.error(e)
-                if "指定时间" in str(e):
+                if "指定时间" or "排片表" in str(e):
                     send_bark("指定时间无场次", str(e))
                     break
             except Exception as e:
