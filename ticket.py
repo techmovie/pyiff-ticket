@@ -14,6 +14,7 @@ import qrcode
 BASE_URL = "https://api.pyiffestival.com/app/api/v1"
 ORIGIN = "https://www.pyiffestival.com"
 REFERER = "https://www.pyiffestival.com"
+MAX_RETRY = 5
 
 Headers = {
     "User-Agent": global_config["user_agent"],
@@ -349,6 +350,7 @@ class TicketHelper(object):
 
     def buy_ticket(self):
         self.timer.start()
+        retries = 0
         while True:
             try:
                 self.validate_user(self.activity_id)
@@ -360,15 +362,23 @@ class TicketHelper(object):
                     break
             except requests.exceptions.RequestException as e:
                 logger.error(e)
+                retries += 1
                 self.send_push("请求失败", e)
+                if retries > MAX_RETRY:
+                    logger.error("重试次数过多，退出")
+                    self.send_push("重试次数过多，退出", "")
+                    break
                 if "验证用户失败" in str(e):
+                    self.send_push("验证用户失败", "请检查token是否正确")
                     break
             except LookupError as e:
                 logger.error(e)
                 if "指定时间" in str(e):
+                    self.send_push("指定时间无场次", str(e))
                     break
             except Exception as e:
                 logger.error("购票失败:" + str(e))
                 if "配置错误" in str(e):
+                    self.send_push("配置错误", str(e))
                     break
             self.wait_some_time()
