@@ -273,7 +273,7 @@ class TicketHelper(object):
                         "hasTickets": plan["hasTickets"],
                     }
                 )
-            [plan] = (
+            plan = (
                 [
                     item
                     for item in plans
@@ -289,6 +289,7 @@ class TicketHelper(object):
             )
             if not plan:
                 raise LookupError(f"未找到「{movie['name']}」指定时间{movie['date']}的场次")
+            plan = plan[0]
             if not plan["canSell"]:
                 raise Exception(f"「{movie['name']}」指定时间{movie['date']}的场次不可售")
             if not plan["hasTickets"]:
@@ -301,7 +302,7 @@ class TicketHelper(object):
             seats = self.get_seats_for_film_plan(plan["id"])
             seat_ids = self.choose_seat(seats, movie)
             if not seat_ids:
-                raise Exception(f"「{movie['name']}」'+指定时间{movie['date']}的场次未找到可用座位")
+                raise Exception(f"「{movie['name']}」'指定时间{movie['date']}的场次未找到可用座位")
             result = self.create_order(seat_ids, plan["id"])
             if "id" in result:
                 order_ids.append(result["id"])
